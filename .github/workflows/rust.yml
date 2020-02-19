@@ -1,0 +1,44 @@
+name: Rust
+
+on: [push]
+
+jobs:
+  ubuntu:
+
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target:
+          - x86_64-unknown-linux-gnu
+          - x86_64-unknown-linux-musl
+        toolchain:
+          - stable
+          - nightly
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.toolchain }}
+          target: ${{ matrix.target }}
+          override: true
+      - name: Display Rust version
+        run: rustc --version --verbose
+      - name: Display Cargo version
+        uses: actions-rs/cargo@v1
+        with:
+          command: version
+          args: --verbose
+      - name: Run cargo build
+        uses: actions-rs/cargo@v1
+        with:
+          use-cross: true
+          command: build
+          args: --release --target=${{ matrix.target }} --verbose
+      - name: Run cargo test
+        uses: actions-rs/cargo@v1
+        with:
+          use-cross: true
+          command: test
+          args: --target=${{ matrix.target }} --verbose
