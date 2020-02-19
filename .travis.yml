@@ -1,0 +1,15 @@
+language: rust
+os:
+  - linux
+rust:
+  - stable
+  - nightly
+jobs:
+  allow_failures:
+    - rust: nightly
+  fast_finish: true
+script:
+  - rustc --version --verbose
+  - cargo --version --verbose
+  - cargo build --verbose
+  - cargo test --verbose
