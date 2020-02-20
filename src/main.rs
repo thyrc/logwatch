@@ -91,6 +91,8 @@ async fn main() -> Result<(), io::Error> {
     let mut buffer = [0; 32];
     let mut stream = inotify.event_stream(&mut buffer)?;
 
+    let mut linebuffer = vec![];
+
     while let Some(event_or_error) = stream.next().await {
         if let Ok(event) = event_or_error {
             if Some(OsString::from(watch.file)) == event.name {
@@ -104,22 +106,34 @@ async fn main() -> Result<(), io::Error> {
                     let f = File::open(&watch.path)?;
                     let mut reader = BufReader::new(f);
                     let _pos = reader.seek(SeekFrom::Start(watch.pos))?;
-                    for line in reader.lines() {
-                        if let Ok(l) = line {
-                            if l.contains(&sudo_failure.message) {
+
+                    loop {
+                        linebuffer.clear();
+                        let bytes_read = reader.read_until(b'\n', &mut linebuffer)?;
+                        if let 0 = bytes_read {
+                            break;
+                        } else {
+                            if String::from_utf8_lossy(&linebuffer[..])
+                                .contains(&sudo_failure.message)
+                            {
                                 sudo_map.add();
                                 if sudo_map.auth_time.len() >= 3 {
                                     println!("sudo bashing detected");
+                                    sudo_map.auth_time = vec![];
                                 }
                             }
-                            if l.contains(&systemauth_failure.message) {
+                            if String::from_utf8_lossy(&linebuffer[..])
+                                .contains(&systemauth_failure.message)
+                            {
                                 system_map.add();
                                 if system_map.auth_time.len() >= 3 {
                                     println!("system-auth bashing detected");
+                                    system_map.auth_time = vec![];
                                 }
                             }
                         }
                     }
+
                     watch.set_pos(metadata.len());
                 }
 
