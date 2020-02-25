@@ -62,7 +62,7 @@ struct AuthFailure {
 
 #[tokio::main]
 async fn main() -> Result<(), io::Error> {
-    let mut watch = Watched::new("/tmp/auth.log");
+    let mut watch = Watched::new("/var/log/auth.log");
 
     if watch.path.is_file() {
         let meta = fs::metadata(&watch.path)?;
@@ -83,10 +83,10 @@ async fn main() -> Result<(), io::Error> {
 
     let mut inotify = Inotify::init().expect("Failed to initialize inotify");
 
-    inotify.add_watch(
-        &watch.dir,
-        WatchMask::CREATE | WatchMask::MODIFY | WatchMask::MOVED_FROM,
-    )?;
+    inotify.add_watch(&watch.dir, WatchMask::CREATE | WatchMask::MOVED_FROM)?;
+
+    let mut file_watch =
+        inotify.add_watch(&watch.path, WatchMask::MODIFY | WatchMask::MOVE_SELF)?;
 
     let mut buffer = [0; 32];
     let mut stream = inotify.event_stream(&mut buffer)?;
@@ -96,10 +96,20 @@ async fn main() -> Result<(), io::Error> {
     while let Some(event_or_error) = stream.next().await {
         if let Ok(event) = event_or_error {
             if Some(OsString::from(watch.file)) == event.name {
-                if event.mask.contains(EventMask::CREATE)
-                    || event.mask.contains(EventMask::MOVED_FROM)
-                {
+                // directory events
+                if event.mask.contains(EventMask::MOVED_FROM) {
+                    // println!("event: {:?}", event);
+                } else if event.mask.contains(EventMask::CREATE) {
+                    // println!("event: {:?}", event);
+                    inotify.rm_watch(file_watch)?;
                     watch.set_pos(0);
+
+                    file_watch =
+                        inotify.add_watch(&watch.path, WatchMask::MODIFY | WatchMask::MOVE_SELF)?;
+                }
+            } else {
+                // file events
+                if event.mask.contains(EventMask::MOVE_SELF) {
                 } else {
                     // println!("event: {:?}", event);
                     let metadata = fs::metadata(&watch.path)?;
@@ -133,22 +143,21 @@ async fn main() -> Result<(), io::Error> {
                             }
                         }
                     }
-
                     watch.set_pos(metadata.len());
+
+                    // clean-up
+                    sudo_map.auth_time = sudo_map
+                        .auth_time
+                        .into_iter()
+                        .filter(|x| x.elapsed() <= Duration::from_secs(300))
+                        .collect::<Vec<_>>();
+
+                    system_map.auth_time = system_map
+                        .auth_time
+                        .into_iter()
+                        .filter(|x| x.elapsed() <= Duration::from_secs(300))
+                        .collect::<Vec<_>>();
                 }
-
-                // clean-up
-                sudo_map.auth_time = sudo_map
-                    .auth_time
-                    .into_iter()
-                    .filter(|x| x.elapsed() <= Duration::from_secs(300))
-                    .collect::<Vec<_>>();
-
-                system_map.auth_time = system_map
-                    .auth_time
-                    .into_iter()
-                    .filter(|x| x.elapsed() <= Duration::from_secs(300))
-                    .collect::<Vec<_>>();
             }
         }
     }
