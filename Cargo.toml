@@ -1,6 +1,6 @@
 [package]
 name = "watch"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["thyrc <thyrc@users.noreply.github.com>"]
 description = "Poor man's intrusion detection"
 license = "MIT"
@@ -9,5 +9,4 @@ edition = "2018"
 [dependencies]
 inotify = "0.8"
 futures-util = "0.3"
-tempdir = "0.3"
 tokio = { version = "0.2", features = ["macros", "rt-core"] }
