@@ -22,7 +22,7 @@ install_rustfmt() {
 
 install_musltools() {
     if $(is_musl); then
-        apt-get -y install musl-tools
+        sudo apt-get -y install musl-tools
     fi
 }
 
