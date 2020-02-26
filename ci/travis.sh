@@ -1,7 +1,5 @@
 #!/bin/bash
 
-exit 0
-
 # build, test and check formatting in this phase
 
 set -ex
