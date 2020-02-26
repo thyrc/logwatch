@@ -20,6 +20,12 @@ install_rustfmt() {
     rustup component add rustfmt
 }
 
+install_musltools() {
+    if $(is_musl); then
+        apt-get -y install musl-tools
+    fi
+}
+
 install_targets() {
     if [ $(host) != "$TARGET" ]; then
         rustup target add $TARGET
@@ -29,6 +35,7 @@ install_targets() {
 main() {
     install_rustup
     install_targets
+    install_musltools
     install_rustfmt
 }
 

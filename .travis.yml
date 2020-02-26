@@ -1,10 +1,6 @@
 language: rust
 os:
   - linux
-addons:
-  apt:
-    packages:
-      - musl-tools
 matrix:
   fast_finish: true
   include:
@@ -16,7 +12,6 @@ matrix:
       env: TARGET=x86_64-unknown-linux-musl
     - rust: nightly
       env: TARGET=x86_64-unknown-linux-musl
-jobs:
   allow_failures:
     - rust: nightly
 install: ci/install.sh
