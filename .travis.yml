@@ -1,19 +1,23 @@
 language: rust
 os:
   - linux
-rust:
-  - stable
-  - nightly
+addons:
+  apt:
+    packages:
+      - musl-tools
 matrix:
   fast_finish: true
   include:
-    - env: TARGET=x86_64-unknown-linux-gnu
-    - env: TARGET=x86_64-unknown-linux-musl
+    - rust: stable
+      env: TARGET=x86_64-unknown-linux-gnu
+    - rust: nightly
+      env: TARGET=x86_64-unknown-linux-gnu
+    - rust: stable
+      env: TARGET=x86_64-unknown-linux-musl
+    - rust: nightly
+      env: TARGET=x86_64-unknown-linux-musl
 jobs:
   allow_failures:
     - rust: nightly
-script:
-  - rustc --version --verbose
-  - cargo --version --verbose
-  - cargo build --verbose
-  - cargo test --verbose
+install: ci/install.sh
+script: ci/travis.sh
