@@ -35,7 +35,6 @@ install_targets() {
 main() {
     install_rustup
     install_targets
-    install_musltools
     install_rustfmt
 }
 

@@ -1,6 +1,10 @@
 language: rust
 os:
   - linux
+addons:
+  apt:
+    packages:
+      - musl-tools
 matrix:
   fast_finish: true
   include:
