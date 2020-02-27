@@ -8,6 +8,9 @@ use std::io::{BufRead, BufReader, Seek, SeekFrom};
 use std::path::Path;
 use std::time::{Duration, Instant};
 
+const TIME_LIMIT: u64 = 300;
+const RATE_LIMIT: usize = 3;
+
 struct Watched<'a> {
     path: &'a Path,
     file: &'a OsStr,
@@ -64,9 +67,14 @@ struct AuthFailure {
 async fn main() -> Result<(), io::Error> {
     let mut watch = Watched::new("/var/log/auth.log");
 
+    let mut inotify = Inotify::init().expect("Failed to initialize inotify");
+
+    inotify.add_watch(&watch.dir, WatchMask::CREATE | WatchMask::MOVED_FROM)?;
+
     if watch.path.is_file() {
         let meta = fs::metadata(&watch.path)?;
         watch.set_pos(meta.len());
+        inotify.add_watch(&watch.path, WatchMask::MODIFY | WatchMask::MOVE_SELF)?;
     }
 
     let sudo_failure = AuthFailure {
@@ -81,13 +89,6 @@ async fn main() -> Result<(), io::Error> {
     let mut sudo_map = FailureMap::new(sudo_failure.kind);
     let mut system_map = FailureMap::new(systemauth_failure.kind);
 
-    let mut inotify = Inotify::init().expect("Failed to initialize inotify");
-
-    inotify.add_watch(&watch.dir, WatchMask::CREATE | WatchMask::MOVED_FROM)?;
-
-    let mut file_watch =
-        inotify.add_watch(&watch.path, WatchMask::MODIFY | WatchMask::MOVE_SELF)?;
-
     let mut buffer = [0; 32];
     let mut stream = inotify.event_stream(&mut buffer)?;
 
@@ -97,25 +98,21 @@ async fn main() -> Result<(), io::Error> {
         if let Ok(event) = event_or_error {
             if Some(OsString::from(watch.file)) == event.name {
                 // directory events
-                if event.mask.contains(EventMask::MOVED_FROM) {
-                    // println!("event: {:?}", event);
-                } else if event.mask.contains(EventMask::CREATE) {
-                    // println!("event: {:?}", event);
-                    inotify.rm_watch(file_watch)?;
+                if event.mask.contains(EventMask::CREATE) {
+                    // update watch
+                    inotify.add_watch(&watch.path, WatchMask::MODIFY | WatchMask::MOVE_SELF)?;
                     watch.set_pos(0);
-
-                    file_watch =
-                        inotify.add_watch(&watch.path, WatchMask::MODIFY | WatchMask::MOVE_SELF)?;
                 }
             } else {
                 // file events
-                if event.mask.contains(EventMask::MOVE_SELF) {
+                if event.mask.contains(EventMask::MOVE_SELF)
+                    | event.mask.contains(EventMask::IGNORED)
+                {
                 } else {
-                    // println!("event: {:?}", event);
                     let metadata = fs::metadata(&watch.path)?;
                     let f = File::open(&watch.path)?;
                     let mut reader = BufReader::new(f);
-                    let _pos = reader.seek(SeekFrom::Start(watch.pos))?;
+                    reader.seek(SeekFrom::Start(watch.pos))?;
 
                     loop {
                         linebuffer.clear();
@@ -127,7 +124,7 @@ async fn main() -> Result<(), io::Error> {
                                 .contains(&sudo_failure.message)
                             {
                                 sudo_map.add();
-                                if sudo_map.auth_time.len() >= 3 {
+                                if sudo_map.auth_time.len() >= RATE_LIMIT {
                                     println!("sudo bashing detected");
                                     sudo_map.auth_time = vec![];
                                 }
@@ -136,7 +133,7 @@ async fn main() -> Result<(), io::Error> {
                                 .contains(&systemauth_failure.message)
                             {
                                 system_map.add();
-                                if system_map.auth_time.len() >= 3 {
+                                if system_map.auth_time.len() >= RATE_LIMIT {
                                     println!("system-auth bashing detected");
                                     system_map.auth_time = vec![];
                                 }
@@ -149,13 +146,13 @@ async fn main() -> Result<(), io::Error> {
                     sudo_map.auth_time = sudo_map
                         .auth_time
                         .into_iter()
-                        .filter(|x| x.elapsed() <= Duration::from_secs(300))
+                        .filter(|x| x.elapsed() <= Duration::from_secs(TIME_LIMIT))
                         .collect::<Vec<_>>();
 
                     system_map.auth_time = system_map
                         .auth_time
                         .into_iter()
-                        .filter(|x| x.elapsed() <= Duration::from_secs(300))
+                        .filter(|x| x.elapsed() <= Duration::from_secs(TIME_LIMIT))
                         .collect::<Vec<_>>();
                 }
             }
