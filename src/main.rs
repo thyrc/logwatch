@@ -1,10 +1,7 @@
-use std::io;
-
-use futures_util::StreamExt;
 use inotify::{EventMask, Inotify, WatchMask};
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsStr;
 use std::fs::{self, File};
-use std::io::{BufRead, BufReader, Seek, SeekFrom};
+use std::io::{self, BufRead, BufReader, Seek, SeekFrom};
 use std::path::Path;
 use std::time::{Duration, Instant};
 
@@ -63,9 +60,9 @@ struct AuthFailure {
     message: String,
 }
 
-#[tokio::main]
-async fn main() -> Result<(), io::Error> {
-    let mut watch = Watched::new("/var/log/auth.log");
+fn main() -> Result<(), io::Error> {
+    // let mut watch = Watched::new("/var/log/auth.log");
+    let mut watch = Watched::new("/tmp/auth.log");
 
     let mut inotify = Inotify::init().expect("Failed to initialize inotify");
 
@@ -89,14 +86,15 @@ async fn main() -> Result<(), io::Error> {
     let mut sudo_map = FailureMap::new(sudo_failure.kind);
     let mut system_map = FailureMap::new(systemauth_failure.kind);
 
-    let mut buffer = [0; 32];
-    let mut stream = inotify.event_stream(&mut buffer)?;
-
     let mut linebuffer = vec![];
 
-    while let Some(event_or_error) = stream.next().await {
-        if let Ok(event) = event_or_error {
-            if Some(OsString::from(watch.file)) == event.name {
+    let mut buffer = [0u8; 4096];
+
+    loop {
+        let events = inotify.read_events_blocking(&mut buffer)?;
+
+        for event in events {
+            if Some(OsStr::new(watch.file)) == event.name {
                 // directory events
                 if event.mask.contains(EventMask::CREATE) {
                     // update watch
@@ -158,6 +156,4 @@ async fn main() -> Result<(), io::Error> {
             }
         }
     }
-
-    Ok(())
 }
