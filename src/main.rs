@@ -61,8 +61,7 @@ struct AuthFailure {
 }
 
 fn main() -> Result<(), io::Error> {
-    // let mut watch = Watched::new("/var/log/auth.log");
-    let mut watch = Watched::new("/tmp/auth.log");
+    let mut watch = Watched::new("/var/log/auth.log");
 
     let mut inotify = Inotify::init().expect("Failed to initialize inotify");
 
