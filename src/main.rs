@@ -114,7 +114,7 @@ fn main() -> Result<(), io::Error> {
                     loop {
                         linebuffer.clear();
                         let bytes_read = reader.read_until(b'\n', &mut linebuffer)?;
-                        if let 0 = bytes_read {
+                        if bytes_read == 0 {
                             break;
                         } else {
                             if String::from_utf8_lossy(&linebuffer[..])
