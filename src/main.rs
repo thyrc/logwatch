@@ -53,6 +53,11 @@ impl FailureMap {
     fn add(&mut self) {
         self.auth_time.push(Instant::now());
     }
+
+    fn clean(&mut self) {
+        self.auth_time
+            .retain(|x| x.elapsed() <= Duration::from_secs(TIME_LIMIT));
+    }
 }
 
 struct AuthFailure {
@@ -121,6 +126,7 @@ fn main() -> Result<(), io::Error> {
                                 .contains(&sudo_failure.message)
                             {
                                 sudo_map.add();
+                                sudo_map.clean();
                                 if sudo_map.auth_time.len() >= RATE_LIMIT {
                                     println!("sudo bashing detected");
                                     sudo_map.auth_time = vec![];
@@ -130,6 +136,7 @@ fn main() -> Result<(), io::Error> {
                                 .contains(&systemauth_failure.message)
                             {
                                 system_map.add();
+                                system_map.clean();
                                 if system_map.auth_time.len() >= RATE_LIMIT {
                                     println!("system-auth bashing detected");
                                     system_map.auth_time = vec![];
@@ -138,19 +145,6 @@ fn main() -> Result<(), io::Error> {
                         }
                     }
                     watch.set_pos(metadata.len());
-
-                    // clean-up
-                    sudo_map.auth_time = sudo_map
-                        .auth_time
-                        .into_iter()
-                        .filter(|x| x.elapsed() <= Duration::from_secs(TIME_LIMIT))
-                        .collect::<Vec<_>>();
-
-                    system_map.auth_time = system_map
-                        .auth_time
-                        .into_iter()
-                        .filter(|x| x.elapsed() <= Duration::from_secs(TIME_LIMIT))
-                        .collect::<Vec<_>>();
                 }
             }
         }
