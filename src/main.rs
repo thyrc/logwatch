@@ -37,32 +37,56 @@ enum Auth {
 }
 
 #[derive(Debug)]
-struct FailureMap {
-    auth_type: Auth,
-    auth_time: Vec<Instant>,
+struct AuthFailure<'a> {
+    kind: Auth,
+    message: &'a str,
+    notify: &'a str,
 }
 
-impl FailureMap {
-    fn new(a: Auth) -> Self {
+#[derive(Debug)]
+struct FailureMap<'a> {
+    auth_failure: AuthFailure<'a>,
+    auth_failure_time: Vec<Instant>,
+    notify_time: Option<Instant>,
+}
+
+impl<'a> FailureMap<'a> {
+    fn new(failure: AuthFailure<'a>) -> Self {
         FailureMap {
-            auth_type: a,
-            auth_time: vec![],
+            auth_failure: failure,
+            auth_failure_time: vec![],
+            notify_time: None,
         }
     }
 
     fn add(&mut self) {
-        self.auth_time.push(Instant::now());
+        self.auth_failure_time.push(Instant::now());
     }
 
     fn clean(&mut self) {
-        self.auth_time
+        self.auth_failure_time
             .retain(|x| x.elapsed() <= Duration::from_secs(TIME_LIMIT));
     }
 }
 
-struct AuthFailure {
-    kind: Auth,
-    message: String,
+fn notify(fm: &mut FailureMap) -> Result<(), io::Error> {
+    fm.clean();
+    fm.add();
+    if fm.auth_failure_time.len() >= RATE_LIMIT {
+        if let Some(t) = fm.notify_time {
+            if t.elapsed() >= Duration::from_secs(TIME_LIMIT) {
+                println!("{}", fm.auth_failure.notify);
+                fm.notify_time = fm.auth_failure_time.pop();
+                fm.auth_failure_time = vec![];
+            }
+        } else {
+            println!("{}", fm.auth_failure.notify);
+            fm.notify_time = fm.auth_failure_time.pop();
+            fm.auth_failure_time = vec![];
+        }
+    }
+
+    Ok(())
 }
 
 fn main() -> Result<(), io::Error> {
@@ -80,19 +104,23 @@ fn main() -> Result<(), io::Error> {
 
     let sudo_failure = AuthFailure {
         kind: Auth::Sudo,
-        message: String::from("pam_unix(sudo:auth): authentication failure;"),
+        message: "pam_unix(sudo:auth): authentication failure;",
+        notify: "sudo bashing detected",
     };
     let systemauth_failure = AuthFailure {
         kind: Auth::System,
-        message: String::from("pam_unix(system-auth:auth): authentication failure;"),
+        message: "pam_unix(system-auth:auth): authentication failure;",
+        notify: "system-auth bashing detected",
     };
 
-    let mut sudo_map = FailureMap::new(sudo_failure.kind);
-    let mut system_map = FailureMap::new(systemauth_failure.kind);
+    let mut sudo_map = FailureMap::new(sudo_failure);
+    let mut system_map = FailureMap::new(systemauth_failure);
+
+    let mut failures = vec![&mut sudo_map, &mut system_map];
 
     let mut linebuffer = vec![];
 
-    let mut buffer = [0u8; 4096];
+    let mut buffer = [0_u8; 4096];
 
     loop {
         let events = inotify.read_events_blocking(&mut buffer)?;
@@ -107,10 +135,9 @@ fn main() -> Result<(), io::Error> {
                 }
             } else {
                 // file events
-                if event.mask.contains(EventMask::MOVE_SELF)
-                    | event.mask.contains(EventMask::IGNORED)
+                if !(event.mask.contains(EventMask::MOVE_SELF)
+                    | event.mask.contains(EventMask::IGNORED))
                 {
-                } else {
                     let metadata = fs::metadata(&watch.path)?;
                     let f = File::open(&watch.path)?;
                     let mut reader = BufReader::new(f);
@@ -122,24 +149,11 @@ fn main() -> Result<(), io::Error> {
                         if bytes_read == 0 {
                             break;
                         } else {
-                            if String::from_utf8_lossy(&linebuffer[..])
-                                .contains(&sudo_failure.message)
-                            {
-                                sudo_map.add();
-                                sudo_map.clean();
-                                if sudo_map.auth_time.len() >= RATE_LIMIT {
-                                    println!("sudo bashing detected");
-                                    sudo_map.auth_time = vec![];
-                                }
-                            }
-                            if String::from_utf8_lossy(&linebuffer[..])
-                                .contains(&systemauth_failure.message)
-                            {
-                                system_map.add();
-                                system_map.clean();
-                                if system_map.auth_time.len() >= RATE_LIMIT {
-                                    println!("system-auth bashing detected");
-                                    system_map.auth_time = vec![];
+                            for map in &mut failures {
+                                if String::from_utf8_lossy(&linebuffer[..])
+                                    .contains(map.auth_failure.message)
+                                {
+                                    notify(*map)?;
                                 }
                             }
                         }
